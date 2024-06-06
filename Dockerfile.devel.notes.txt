@@ -1,0 +1,107 @@
+# Dockerfile.devel.notes.txt
+
+# Option 1, Assumes you'll make edits to the docker file defaults as you go. 
+
+export PROGRESS='--progress=plain'
+export CACHE='--no-cache'
+export HOST_VOLUME_PATH=/my/host/volume/path
+# mkdir -p /my/host/volume/path # first time 
+
+# build
+docker build -f Dockerfile.devel --ulimit nofile=65535:65535 --build-arg  $CACHE $PROGRESS  -t gsrs3:latest .
+
+# run 
+$_SUDO docker run -d -p 8080:8080 -v $HOST_VOLUME_PATH:/home/srs -e CATALINA_OPTS="-Xms12g -Xmx12g \
+-XX:ReservedCodeCacheSize=512m -e DB_DDL_AUTO='update' gsrs3:latest
+
+=========== 
+
+
+Option 2, The below could help you get started with Option 1, or help you rely more on environment variables.
+
+# Docker build non-gsrs specific things
+export PROGRESS='--progress=plain'
+export CACHE='--no-cache'
+
+# Docker run non-gsrs specific things
+
+
+# Helpers for your terminal session
+export $_SUDO=sudo 
+export _MODULE_IGNORE_SUBSTANCES_ONLY='adverse-events applications clinical-trials discovery frontend gateway impurities invitro-pharmacology products ssg4m'
+export _MODULE_IGNORE_SUBSTANCES_PLUS='adverse-events applications clinical-trials discovery impurities invitro-pharmacology products ssg4m'
+export _MODULE_IGNORE_FRONTEND_ONLY='adverse-events applications clinical-trials discovery gateway impurities invitro-pharmacology products ssg4m substances' 
+export _MODULE_IGNORE_GATEWAY_ONLY="adverse-events applications clinical-trials discovery frontend impurities invitro-pharmacology products ssg4m substances" 
+export _STARTER_MOUDULES_SUBSTANCES_ONLY="gsrs-spring-starter:master gsrs-spring-module-substances:master"
+export _STARTER_MOUDULES_SUBSTANCES_PLUS="gsrs-spring-starter:master gsrs-spring-module-substances:master"
+export _STARTER_MOUDULES_FRONTEND_ONLY=""' 
+export _STARTER_MOUDULES_GATEWAY_ONLY="" 
+
+# Set the value you want the Dockerfile to use from the helpers
+export MODULE_IGNORE=$_MODULE_IGNORE_SUBSTANCES_PLUS
+
+# Remove any multispace sequences and then trim 
+export BUILD_DEFAULT_DEPLOY_IGNORE_PATTERN=$(awk '{$1=$1};1' <<<"$MODULE_IGNORE") 
+export BUILD_DEFAULT_DEPLOY_IGNORE_PATTERN=$(sed 's/[ ][ ]*/|/g' <<<"$BUILD_DEFAULT_DEPLOY_IGNORE_PATTERN")
+
+# This assumes your build and run values the same, which may not always be the case
+export RUN_DEPLOY_IGNORE_PATTERN="-Ddeploy.ignore.pattern="($BUILD_DEFAULT_DEPLOY_IGNORE_PATTERN)'" 
+
+
+export GSRS_CI_REPO_NAME=gsrs-ci
+
+export GSRS_CI_TAG=fda
+
+
+
+ARG STARTER_MODULES=$_STARTER_MODULES_SUBSTANCES_ONLY
+# ARG STARTER_MODULES=$_STARTER_MODULES_SUBSTANCES_PLUS
+# ARG STARTER_MODULES=$_STARTER_MODULES_GATEWAY_ONLY
+# ARG STARTER_MODULES=$_STARTER_MODULES_FRONTEND_ONLY
+
+
+# ARG STARTER_MODULES="\
+#   gsrs-spring-starter:master \
+#   gsrs-spring-module-substances:master \
+#   gsrs-spring-module-adverse-events:starter \
+#   gsrs-spring-module-drug-applications:starter \
+#   gsrs-spring-module-clinical-trials:master \
+#   gsrs-spring-module-impurities:starter \
+#   gsrs-spring-module-invitro-pharmacology:starter \
+#   gsrs-spring-module-drug-products:starter \
+#   gsrs-spring-module-ssg4:starter \
+# "
+
+ARG STARTER_MODULES=" \
+   gsrs-spring-starter:master \
+   gsrs-spring-module-substances:master \
+"
+
+export HOST_VOLUME_PATH=/my/host/volume/path
+# mkdir -p /my/host/volume/path # first time 
+
+
+# Use a local build zip file  
+export FRONTEND_BUILD_ARGS=' -Dfrontend.repo=file:///src/angular-bin -Dfrontend.tag=local_deployable_binaries -Dnode.disable -Dwithout.visualizer -DskipTests '
+
+          # Alternatives 
+          # Use development_3.0 
+          # export FRONTEND_BUILD_ARGS='  -Dfrontend.tag=development_3.0 -Dwithout.visualizer -DskipTests '
+
+          # Use a tagged version, that has a build zipfile   
+          # export FRONTEND_BUILD_ARGS='  -Dfrontend.tag=GSRSv3.1 -Dnode.disable -Dwithout.visualizer -DskipTests '
+
+
+
+
+# COMMANDS THAT RELY MORE ON THE ABOVE
+
+$_SUDO docker build -f Dockerfile.devel --ulimit nofile=65535:65535 
+--build-arg MODULE_IGNORE="$MODULE_IGNORE" \
+--build-arg STARTER_MODULES="$STARTER_MODULES"  \ 
+$CACHE $PROGRESS  -t gsrs3:latest .
+
+
+# Your more complicated run command 
+$_SUDO docker run -d -p 8080:8080 -v $HOST_VOLUME_PATH:/home/srs -e CATALINA_OPTS="-Xms12g -Xmx12g \
+-XX:ReservedCodeCacheSize=512m $RUN_DEPLOY_IGNORE_PATTERN" -e DB_DDL_AUTO='update' gsrs3:latest
