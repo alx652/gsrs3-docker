@@ -1,26 +1,22 @@
+# The defaults here assume 
+
 FROM maven:3-jdk-11 as build
     ENV MAVEN_CONFIG=
     ENV CATALINA_HOME=/usr/local/tomcat
     ARG EP_EXT_TAG=
 
-    # Leave these example alone 
-      # substances-only
-      # ARG MODULE_IGNORE="adverse-events applications clinical-trials discovery frontend gateway impurities invitro-pharmacology products ssg4m" 
-      # substances-plus 
-      # ARG MODULE_IGNORE="adverse-events applications clinical-trials discovery impurities invitro-pharmacology products ssg4m"
 
-    # See also deploy.ignore.pattern below 
-    # ARG MODULE_IGNORE=
+    # !!!!! See also deploy.ignore.pattern below !!!!
+    # substances-plus default
+    ARG MODULE_IGNORE="adverse-events applications clinical-trials discovery impurities invitro-pharmacology products ssg4m"
 
-      # substances-plus, default 
-      ARG MODULE_IGNORE="adverse-events applications clinical-trials discovery impurities invitro-pharmacology products ssg4m"
-
-    ARG BASE_GIT_URL=http://github.com/ncats/
+    ARG BASE_GIT_URL=http://github.com/ncats
 
     ARG GSRS_CI_REPO_NAME=gsrs-ci
-    ARG GSRS_CI_TAG=hoconConfigs_3.1.1merge_mapway
+    ARG GSRS_CI_TAG=fda
 
-    ARG FRONTEND_BUILD_ARGS=' -Dfrontend.repo=file:///src/angular-bin -Dfrontend.tag=deployable_binaries -Dnode.disable -Dwithout.visualizer -Dwithout.static -DskipTests '
+    ARG FRONTEND_BUILD_ARGS='  -Dfrontend.tag=development_3.0 -Dwithout.visualizer -DskipTests '
+    # ARG FRONTEND_BUILD_ARGS=' -Dfrontend.repo=file:///src/angular-bin -Dfrontend.tag=local_deployable_binaries -Dnode.disable -Dwithout.visualizer -DskipTests '
 
 
     # Note the colon ":" separates the module name and the reference (e.g. branch tag). The second value is used by the git --branch option.  It is not optional though for 
@@ -38,16 +34,19 @@ FROM maven:3-jdk-11 as build
 #      #gsrs-spring-module-ssg4:starter \
 #    "
 
-   ARG STARTER_MODULES="\
-      gsrs-spring-starter:aw_a25_configlisttomap \
-      gsrs-spring-module-substances:aw_sm_a42_configlisttomap \
-    "
+   ARG STARTER_MODULES=" \
+      gsrs-spring-starter:master \
+      gsrs-spring-module-substances:master \
+"
 
-   ARG STARTER_MODULES=
+
+
+  # if [[ "$repo" =~ ^#.* ]]; then continue; fi && \
+
 
 RUN \
     for repo in ${STARTER_MODULES}; do \
-      git clone --recursive --depth=1 --branch ${repo#*:} ${BASE_GIT_URL}${repo%:*}.git && \
+      git clone --recursive --depth=1 --branch ${repo#*:} ${BASE_GIT_URL}/${repo%:*}.git && \
       cd  ${repo%:*} && \
       if [ -f installExtraJars.sh ]; then sh ./installExtraJars.sh; fi && \
       sh ./mvnw clean -U install -DskipTests && \
@@ -113,14 +112,11 @@ RUN \
 FROM tomcat:9-jre11
     ENV CATALINA_HOME=/usr/local/tomcat
     ENV webapps=/usr/local/tomcat/webapps
+    ENV configs=/home/srs/conf
     ENV API_BASE_PATH=/ginas/app
 
-    # See how this is used when running a container. This gives you a way of setting the default value in established in the image.
-    # Even so, you can override when running in the container if you want to for some reason.  
-
-    # substances-only 
-    # ARG DEFAULT_DEPLOY_IGNORE_PATTERN="adverse-events|applications|clinical-trials|discovery|frontend|gateway|impurities|invitro-pharmacology|products|ssg4m" 
-
+    # See also how this is implies what is used as default when running a container. 
+    # This BUILD value gives you a way of setting the default value established in the image.
     # substances-plus. default if no arg passed  
     ARG DEFAULT_DEPLOY_IGNORE_PATTERN='adverse-events|applications|clinical-trials|discovery|impurities|invitro-pharmacology|products|ssg4m'
 
@@ -130,7 +126,7 @@ FROM tomcat:9-jre11
         sed -i "s/logs/\/home\/srs\/logs/g" ${CATALINA_HOME}/conf/server.xml && \
         sed -i "s/8080/\$\{port.http.nossl:-8080\}/g" ${CATALINA_HOME}/conf/server.xml && \
         sed -i "s/connectionTimeout/maxPostSize=\"536870912\" relaxedQueryChars=\"[]|{}\" connectionTimeout/g" ${CATALINA_HOME}/conf/server.xml && \
-        sed -i "s/unpackWARs=\"true\" autoDeploy=\"true\"/unpackWARs=\"false\" autoDeploy=\"false\" deployIgnore=\"\$\{deploy.ignore.pattern:-(${DEFAULT_DEPLOY_IGNORE_PATTERN})\}\"/g" ${CATALINA_HOME}/conf/server.xml && \
+        sed -i "s/unpackWARs=\"true\" autoDeploy=\"true\"/unpackWARs=\"false\" autoDeploy=\"false\" deployIgnore=\"\$\{deploy.ignore.pattern:-(${BUILD_DEFAULT_DEPLOY_IGNORE_PATTERN})\}\"/g" ${CATALINA_HOME}/conf/server.xml && \
         sed -i "s/\$.catalina.base././g" ${CATALINA_HOME}/conf/logging.properties && \
         mkdir -p /root/.cache/JNA /root/.java/fonts /home/srs/conf /home/srs/logs /home/srs/exports && \
         ln -s /tmp /root/.cache/JNA/temp && \
