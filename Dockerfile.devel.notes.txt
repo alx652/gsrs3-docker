@@ -8,11 +8,20 @@ export HOST_VOLUME_PATH=/my/host/volume/path
 # mkdir -p /my/host/volume/path # first time 
 
 # build
-docker build -f Dockerfile.devel --ulimit nofile=65535:65535 --build-arg  $CACHE $PROGRESS  -t gsrs3:latest .
+docker build -f Dockerfile.devel --ulimit nofile=65535:65535 $CACHE $PROGRESS  -t gsrs3:latest .
+
+
+
 
 # run 
-$_SUDO docker run -d -p 8080:8080 -v $HOST_VOLUME_PATH:/home/srs -e CATALINA_OPTS="-Xms12g -Xmx12g \
+$_SUDO docker run -d -p 8080:8080 -v $HOST_VOLUME_PATH:/home/srs -e CATALINA_OPTS="-Xms12g -Xmx12g" \
 -XX:ReservedCodeCacheSize=512m -e DB_DDL_AUTO='update' gsrs3:latest
+
+sudo cp gsrs-ci/substances/salt_data_public.tsv /var/lib/gsrs/conf/
+export HOST_VOLUME_PATH=/my/host/volume/path
+sudo docker run -d -p 8080:8080 -v $HOST_VOLUME_PATH CATALINA_OPTS='-Xms12g -Xmx12g -XX:ReservedCodeCacheSize=512m' -e DB_DDL_AUTO='update'  gsrs3:latest
+
+sudo docker run -d -p 8080:8080 -v /var/lib/gsrs:/home/srs -e CATALINA_OPTS='-Xms20g -Xmx20g -XX:ReservedCodeCacheSize=512m' -e DB_DDL_AUTO='update' gsrs3:latest
 
 =========== 
 

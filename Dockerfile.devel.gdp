@@ -1,0 +1,152 @@
+# The defaults here assume 
+
+FROM maven:3-jdk-11 as build
+    ENV MAVEN_CONFIG=
+    ENV CATALINA_HOME=/usr/local/tomcat
+    ARG EP_EXT_TAG=
+
+
+    # !!!!! See also deploy.ignore.pattern below !!!!
+    # substances-plus default
+    # ARG MODULE_IGNORE="adverse-events applications clinical-trials discovery impurities invitro-pharmacology products ssg4m"
+    
+    ARG MODULE_IGNORE="adverse-events applications discovery invitro-pharmacology ssg4m"
+
+    ARG BASE_GIT_URL=http://github.com/ncats
+
+    ARG GSRS_CI_REPO_NAME=gsrs-ci
+    # ARG GSRS_CI_TAG=fda
+    ARG GSRS_CI_TAG=hoconConfigs_3.1.1merge_mapway
+
+    # ARG FRONTEND_BUILD_ARGS='  -Dfrontend.tag=development_3.0 -Dwithout.visualizer -DskipTests '
+    ARG FRONTEND_BUILD_ARGS=' -Dfrontend.repo=file:///frontend-bin -Dfrontend.tag=local_deployable_binaries -Dnode.disable -Dwithout.visualizer -DskipTests '
+
+    # Note the colon ":" separates the module name and the reference (e.g. branch tag). The second value is used by the git --branch option.  It is not optional though for 
+    # for the docker file to work correctly  
+ 
+#    ARG STARTER_MODULES="\
+#     gsrs-spring-starter:master \
+#      gsrs-spring-module-substances:master \
+#      gsrs-spring-module-adverse-events:starter \
+#      gsrs-spring-module-drug-applications:starter \
+#      gsrs-spring-module-clinical-trials:master \
+#      gsrs-spring-module-impurities:starter \
+#      #gsrs-spring-module-invitro-pharmacology:starter \
+#      gsrs-spring-module-drug-products:starter \
+#      #gsrs-spring-module-ssg4:starter \
+#    "
+
+   ARG STARTER_MODULES=" \
+      gsrs-spring-starter:aw_a25_configlisttomap \
+      gsrs-spring-module-substances:aw_sm_a42_configlisttomap \
+      gsrs-spring-module-clinical-trials:aw_a35_configlisttomap \
+      gsrs-spring-module-drug-products:aw_a02_configlisttomap \
+      gsrs-spring-module-impurities:mm_a01_configlisttomap \
+"
+
+  # if [[ "$repo" =~ ^#.* ]]; then continue; fi && \
+
+
+RUN \
+    for repo in ${STARTER_MODULES}; do \
+      git clone --recursive --depth=1 --branch ${repo#*:} ${BASE_GIT_URL}/${repo%:*}.git && \
+      cd  ${repo%:*} && \
+      if [ -f installExtraJars.sh ]; then sh ./installExtraJars.sh; fi && \
+      sh ./mvnw clean -U install -DskipTests && \
+      cd .. \
+    ; done 
+
+
+
+    COPY . /src
+   # Install EP Extensions
+   RUN [ -z "${EP_EXT_TAG}" ] && exit 0 ; \
+       git clone --recursive --depth=1 --branch ${EP_EXT_TAG} https://github.com/epuzanov/gsrs-ep-substance-extension.git && \
+       cd gsrs-ep-substance-extension && \
+       rm -rf src/main/java/gsrs/module/substance/services src/main/java/gsrs/module/substance/exporters/JsonPortable*.java src/main/java/gsrs/EnableGsrsJoseCryptoService.java /src/patches/40-joseCryptoService.patch && \
+       sh ./mvnw clean -U install -DskipTests && \
+       cd ..
+
+
+    # This avoid auth issues and allows editing 
+    COPY ${GSRS_CI_REPO_NAME} ${GSRS_CI_REPO_NAME} 
+
+    COPY frontend-bin frontend-bin
+
+#    COPY  gsrs-spring-starter  gsrs-spring-starter 
+#    COPY  gsrs-spring-module-substances gsrs-spring-module-substances 
+
+     RUN \
+#    RUN git clone --recursive --depth=1 --branch ${GSRS_CI_TAG} https://github.com/ncats/${GSRS_CI_REPO_NAME}.git && \
+        cd ${GSRS_CI_REPO_NAME} && \
+        [ -z "${EP_EXT_TAG}" ] && rm -rf /src/patches/30-gsrsEpExtension.patch ; \
+        apt-get update && apt-get install -y --no-install-recommends patch && \
+        #  [ -d /src/patches ] && find /src/patches -type f -name '*.patch' -print0 -exec patch -p1 -i {} \; ; \
+        mkdir -p ${CATALINA_HOME}/conf/Catalina/localhost ${CATALINA_HOME}/webapps && \
+        # Add this so that version is not shown
+        # echo "server.info=Application Server" > $CATALINA_HOME/lib/org/apache/catalina/util/ServerInfo.properties 
+        rm -rf ${MODULE_IGNORE} docs deployment-extras jenkins && \
+        for module in `ls -1` ; do \
+            [ ! -f ${module}/mvnw ] && continue ; \
+            cd ${module} && \
+            rm -f src/main/resources/${module}-env.conf && \
+            rm -f src/main/resources/${module}-env-db.conf && \
+            if [ $module = 'frontend' ]; then \
+              sh ./mvnw clean -U package -DskipTests ${FRONTEND_BUILD_ARGS} \
+            ; else  sh ./mvnw clean -U package -DskipTests \
+            ; fi && \
+            # sh ./mvnw clean -U package -DskipTests && \
+            unzip ./target/${module}.war.original -d ${CATALINA_HOME}/webapps/${module} && \
+            mkdir -p ${CATALINA_HOME}/work/Catalina/localhost/${module} && \
+            cd .. && \
+            rm -rf ${module} ; done && \
+        [ -d ${CATALINA_HOME}/webapps/gateway ] && mv ${CATALINA_HOME}/webapps/gateway ${CATALINA_HOME}/webapps/ROOT ; \
+        [ -d ${CATALINA_HOME}/work/Catalina/localhost/gateway ] && mv ${CATALINA_HOME}/work/Catalina/localhost/gateway ${CATALINA_HOME}/work/Catalina/localhost/ROOT ; \
+        cd ..
+
+    # Remove duplicated JAR files
+    RUN [ ! -d ${CATALINA_HOME}/webapps/substances ] && exit 0 ; \
+        cd ${CATALINA_HOME}/webapps && \
+        for context in `ls -1 | grep -v substances` ; do \
+            for file in `ls -1 ${context}/WEB-INF/lib` ; do \
+                [ ! -f substances/WEB-INF/lib/${file} ] && continue ; \
+                rm ${context}/WEB-INF/lib/${file} && \
+                ln -s ../../../substances/WEB-INF/lib/${file} ${context}/WEB-INF/lib/${file} ; done ; done
+
+# can we get stderr and stdout in logs? 
+
+
+FROM tomcat:9.0.95-jdk11
+    ENV CATALINA_HOME=/usr/local/tomcat
+    ENV webapps=/usr/local/tomcat/webapps
+    ENV configs=/home/srs/conf
+    ENV API_BASE_PATH=/ginas/app
+
+    # See also how this is implies what is used as default when running a container. 
+    # This BUILD value gives you a way of setting the default value established in the image.
+    # substances-plus. default if no arg passed  
+    # ARG DEFAULT_DEPLOY_IGNORE_PATTERN='adverse-events|applications|clinical-trials|discovery|impurities|invitro-pharmacology|products|ssg4m'
+
+    ARG DEFAULT_DEPLOY_IGNORE_PATTERN='adverse-events|applications|discovery|invitro-pharmacology|ssg4m'
+
+    RUN rm -rf ${CATALINA_HOME}/temp && \
+        /bin/echo -e "#!/bin/sh\nmkdir -p /home/srs/conf /home/srs/logs /home/srs/exports\ncd /home/srs\nexec \"\$@\"\n" > /entrypoint.sh && \
+        chmod 755 /entrypoint.sh && \
+        sed -i "s/logs/\/home\/srs\/logs/g" ${CATALINA_HOME}/conf/server.xml && \
+        sed -i "s/8080/\$\{port.http.nossl:-8080\}/g" ${CATALINA_HOME}/conf/server.xml && \
+        sed -i "s/connectionTimeout/maxPostSize=\"536870912\" relaxedQueryChars=\"[]|{}\" connectionTimeout/g" ${CATALINA_HOME}/conf/server.xml && \
+        sed -i "s/unpackWARs=\"true\" autoDeploy=\"true\"/unpackWARs=\"false\" autoDeploy=\"false\" deployIgnore=\"\$\{deploy.ignore.pattern:-(${BUILD_DEFAULT_DEPLOY_IGNORE_PATTERN})\}\"/g" ${CATALINA_HOME}/conf/server.xml && \
+        sed -i "s/\$.catalina.base././g" ${CATALINA_HOME}/conf/logging.properties && \
+        mkdir -p /root/.cache/JNA /root/.java/fonts /home/srs/conf /home/srs/logs /home/srs/exports && \
+        ln -s /tmp /root/.cache/JNA/temp && \
+        ln -s /tmp /root/.java/fonts && \
+        ln -s /tmp ${CATALINA_HOME}/temp
+    COPY --from=build --chown=root ${CATALINA_HOME} ${CATALINA_HOME}
+    WORKDIR /home/srs
+
+
+    RUN apt-get update && apt-get install -y nano 
+
+
+    ENTRYPOINT [ "/entrypoint.sh" ]
+    CMD ["catalina.sh", "run"]
