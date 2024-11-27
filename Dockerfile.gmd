@@ -5,18 +5,20 @@ FROM maven:3-jdk-11 as build
     ENV CATALINA_HOME=/usr/local/tomcat
     ARG GSRS_TAG=GSRSv3.1.1PUB
     ARG GSRS_CI_REPO_NAME=gsrs3-main-deployment
-    ARG GSRS_CI_REPO_NAME=gsrs-ci
+    # ARG GSRS_CI_REPO_NAME=gsrs-ci
     ARG EP_EXT_TAG=
     ARG BASE_GIT_URL=http://github.com/ncats
     ARG BASE_GIT_EP_URL=http://github.com/epuzanov
+    ARG APPL_CONF_LOCATION="VOLUME"
 
     ARG MODULE_IGNORE="adverse-events applications clinical-trials discovery impurities invitro-pharmacology ssg4m"
     
-    ARG FRONTEND_BUILD_ARGS='  -Dfrontend.tag=development_3.0 -Dwithout.visualizer -DskipTests '
-    # ARG FRONTEND_BUILD_ARGS=' -Dfrontend.repo=file:///frontend-bin -Dfrontend.tag=local_deployable_binaries -Dnode.disable -Dwithout.visualizer -DskipTests '
+    # ARG FRONTEND_BUILD_ARGS='  -Dfrontend.tag=development_3.0 -Dwithout.visualizer -DskipTests '
+    ARG FRONTEND_BUILD_ARGS=' -Dfrontend.repo=file:///frontend-bin -Dfrontend.tag=local_deployable_binaries -Dnode.disable -Dwithout.visualizer -DskipTests '
     # ARG FRONTEND_BUILD_ARGS='  -Dnode.disable -Dwithout.static -Dfrontend.tag=:development_3.0 -Dwithout.visualizer -DskipTests '
 
     COPY patches /src/patches
+    COPY frontend-bin /frontend-bin
     RUN [ -z "${EP_EXT_TAG}" ] && exit 0 ; \
       git clone --recursive --depth=1 --branch ${EP_EXT_TAG} ${BASE_GIT_EP_URL}/gsrs-ep-substance-extension.git && \
         cd gsrs-ep-substance-extension && \
@@ -35,8 +37,12 @@ FROM maven:3-jdk-11 as build
             echo "module"${module} && \
             [ ! -f ${module}/mvnw ] && continue ; \
             cd ${module} && \
-            rm -f src/main/resources/${module}-env.conf && \
-            rm -f src/main/resources/${module}-env-db.conf && \
+            rm -f src/main/resources/${module}-env.conf; && \
+            rm -f src/main/resources/${module}-env-db.conf; && \
+            if [ "${APPL_CONF_LOCATION} = "VOLUME" ]; then
+              rm -f src/main/resources/application.*; \
+              /bin/echo -e "\ninclude \"${module}-env.conf\"\ninclude \"${module}-env-db.conf\"\ninclude \"\n${module}-application.conf\"\n" > src/main/resources/application.conf \
+            ; fi &&
             if [ $module = 'frontend' ]; then \
               sh ./mvnw clean -U package -DskipTests ${FRONTEND_BUILD_ARGS} \
             ; else  sh ./mvnw clean -U package -DskipTests \
