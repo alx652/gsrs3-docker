@@ -1,0 +1,178 @@
+FROM maven:3-jdk-11 AS build
+
+    ENV MAVEN_CONFIG=''
+    ENV CATALINA_HOME=/usr/local/tomcat
+    ARG SKIP_PATCHES=YES
+    ARG INCLUDE_EXTRA_PACKAGES='vim'
+
+    ARG BASE_GIT_URL=http://github.com/ncats
+    ARG GSRS_CI_REPO_NAME=gsrs-ci
+
+    ARG GSRS_CI_TAG=hoconConfigs_3.1.1merge_mapway
+
+    ARG EP_EXT_TAG=''
+    ARG EP_BASE_GIT_URL=https://github.com/epuzanov
+    ARG EP_EXT_REPO_NAME='gsrs-ep-substance-extension'
+
+    # See also deploy pattern ignore, in Tomcat section below.
+    ARG MODULE_IGNORE="adverse-events applications clinical-trials discovery impurities invitro-pharmacology products ssg4m"  
+
+    # Format "repo-name:reference" where reference may be tag, branch, etc.
+    # ARG STARTER_MODULES=" \
+    #     gsrs-spring-starter:master \
+    #     gsrs-spring-module-substances:master \
+    #     gsrs-spring-module-adverse-events:starter \
+    #     gsrs-spring-module-drug-applications:starter \
+    #     gsrs-spring-module-clinical-trials:master \
+    #     gsrs-spring-module-impurities:starter \
+    #     #gsrs-spring-module-invitro-pharmacology:master \
+    #     gsrs-spring-module-drug-products:starter \
+    #     gsrs-spring-module-ssg4:master \
+    # "
+
+    ARG STARTER_MODULES=" \
+        gsrs-spring-starter:aw_a25_configlisttomap \
+        gsrs-spring-module-substances:aw_sm_a42_configlisttomap \
+    "
+
+    # Probably won't work do pass these on the command line. 
+    # Will be used if frontend-bin folder exists:
+    ARG FRONTEND_BUILD_ARGS_BIN=' -Dfrontend.repo=file:///frontend-bin -Dfrontend.tag=local_deployable_binaries -Dnode.disable -Dwithout.visualizer -DskipTests '
+    # Otherwise use this:
+    ARG FRONTEND_BUILD_ARGS_STANDARD='  -Dfrontend.tag=development_3.0 -Dwithout.visualizer -DskipTests '
+
+    #### --- Let the fun begin --- ####
+
+    # Optional copy statements. Only recommended for debugging.
+    # if you prefer to clone, or not use at all, these folders SHOULD NOT exist 
+    # DO include the module repo names in STARTER_MODULES, even if you plan to use local copies.
+    # If you use local copies, the branch value specified in STARTER_MODULES will be ignored. 
+    # That is the active branch will be the branch set in the local repo folder.
+    # The bracke[t] trick prevents Docker from attempting to copy non-existing folders. 
+    COPY gsrs-spring-starte[r] gsrs-spring-starter
+    COPY gsrs-spring-module-substance[s] gsrs-spring-module-substances
+    COPY gsrs-spring-module-adverse-event[s] gsrs-spring-module-adverse-events
+    COPY gsrs-spring-module-drug-application[s] gsrs-spring-module-drug-applications
+    COPY gsrs-spring-module-clinical-trial[s] gsrs-spring-module-clinical-trials
+    COPY gsrs-spring-module-impuritie[s] gsrs-spring-module-impurities 
+    COPY gsrs-spring-module-invitro-pharmacolog[y] gsrs-spring-module-invitro-pharmacology
+    COPY gsrs-spring-module-drug-product[s] gsrs-spring-module-drug-products
+    COPY gsrs-spring-module-ssg[4] gsrs-spring-module-ssg4 
+
+    RUN for repo in ${STARTER_MODULES}; do \
+            if ! [ -d ${repo%:*} ]; then \
+                git clone --recursive --depth=1 --branch ${repo#*:} ${BASE_GIT_URL}/${repo%:*}.git; \
+            fi && \
+            cd  ${repo%:*} && \
+            if [ -f installExtraJars.sh ]; then sh ./installExtraJars.sh; fi && \
+            sh ./mvnw clean -U install -DskipTests && \
+            cd ..; \
+        done 
+
+    RUN cd gsrs-spring-module-substances && \
+        if [ -f installExtraJars.sh ]; then sh ./installExtraJars.sh; fi && \
+        sh ./mvnw clean -U install -DskipTests && cd .. 
+
+    COPY . /src
+
+    # Install optional EP Extensions
+    RUN [ -z "${EP_EXT_TAG}" ] && exit 0 ; \
+        git clone --recursive --depth=1 --branch ${EP_EXT_TAG} EP_BASE_GIT_URL/${EP_EXT_REPO_NAME}.git && \
+        cd gsrs-ep-substance-extension && \
+        sh ./mvnw clean -U install -DskipTests && \
+        cd ..
+
+    # Optional copy statements. 
+    # If local copies are used, the branch deployed will be the active branch in the folder. 
+    # Only one can will be used.  It will only be used if equal to $GSRS_CI_REPO_NAME. 
+    # Useful to avoid authentication for private gsrs-ci repo and/or for debugging.
+    # To avoid using local copy, make sure these folder names DO NOT exist.
+    # The bracke[t] trick prevents Docker from attempting to copy non-existing folders. 
+    COPY gsrs-c[i] gsrs-ci 
+    COPY gsrs3-main-deploymen[t] gsrs3-main-deployment 
+
+    # Optional copy; make sure folder does not exist if you prefer normal build of frontend.
+    # If this folder exists. Maven will package a local deployment binary rather than pulling from Git.  
+    # The bracke[t] trick prevents Docker from attempting to copy non-existing folders. 
+    COPY frontend-bi[n] frontend-bin
+
+    RUN if [ -d ${GSRS_CI_REPO_NAME} ]; then \
+            echo "====> GSRS_CI_REPO_NAME using local copy for ${GSRS_CI_REPO_NAME}"; \
+        else \
+            echo "====> GSRS_CI_REPO_NAME cloning ${GSRS_CI_REPO_NAME}"; \
+            git clone --recursive --depth=1 --branch ${GSRS_CI_TAG} ${GSRS_CI_REPO_BASE_URL}/${GSRS_CI_REPO_NAME}.git; \
+        fi && \
+        cd ${GSRS_CI_REPO_NAME} && \
+        [ -z "${EP_EXT_TAG}" ] && rm -rf /src/patches/30-gsrsEpExtension.patch ; \
+        apt-get update && apt-get install -y --no-install-recommends patch && \
+        if ! [ ${SKIP_PATCHES} = "YES"]; then \        
+            if [ -d /src/patches ]; then find /src/patches -type f -name '*.patch' -print0 -exec patch -p1 -i {} \; ; fi \
+        ; fi && \
+        mkdir -p ${CATALINA_HOME}/conf/Catalina/localhost ${CATALINA_HOME}/webapps && \
+        rm -rf ${MODULE_IGNORE} docs deployment-extras jenkins && \
+        for module in $(ls -1) ; do \
+            [ ! -f ${module}/mvnw ] && continue ; \
+            echo "====> Begin ${module}" && \
+            cd ${module} && \
+            if [ -f installExtraJars.sh ]; then sh ./installExtraJars.sh; fi && \
+            rm -f src/main/resources/${module}-env.conf && \
+            rm -f src/main/resources/${module}-env-db.conf && \
+            if [ $module = 'frontend' ]; then \
+                if [ -d ../../frontend-bin]; then \
+                    sh ./mvnw clean -U package -DskipTests ${FRONTEND_BUILD_ARGS_BIN}; \
+                else \
+                    sh ./mvnw clean -U package -DskipTests ${FRONTEND_BUILD_ARGS_STANDARD}; \
+                fi; \
+            else \
+                sh ./mvnw clean -U package -DskipTests; \
+            fi && \
+            unzip ./target/${module}.war.original -d ${CATALINA_HOME}/webapps/${module} && \
+            mkdir -p ${CATALINA_HOME}/work/Catalina/localhost/${module} && \
+            cd .. && \
+            echo "====> End ${module}" && \
+            rm -rf ${module}; \
+        done && \
+        [ -d ${CATALINA_HOME}/webapps/gateway ] && mv ${CATALINA_HOME}/webapps/gateway ${CATALINA_HOME}/webapps/ROOT ; \
+        [ -d ${CATALINA_HOME}/work/Catalina/localhost/gateway ] && mv ${CATALINA_HOME}/work/Catalina/localhost/gateway ${CATALINA_HOME}/work/Catalina/localhost/ROOT ; \
+        cd .. && \
+        if [ -n  "${INCLUDE_EXTRA_PACKAGES}" ]; then \
+            apt-get update && apt-get install -y ${INCLUDE_EXTRA_PACKAGES}; \
+        fi
+
+    # Remove duplicated JAR files
+    RUN [ ! -d ${CATALINA_HOME}/webapps/substances ] && exit 0 ; \
+        cd ${CATALINA_HOME}/webapps && \
+        for context in $(ls -1 | grep -v substances) ; do \
+            for file in $(ls -1 ${context}/WEB-INF/lib) ; do \
+                [ ! -f substances/WEB-INF/lib/${file} ] && continue ; \
+                rm ${context}/WEB-INF/lib/${file} && \
+                ln -s ../../../substances/WEB-INF/lib/${file} ${context}/WEB-INF/lib/${file}; \
+            done; \
+        done
+
+FROM tomcat:9-jre11
+    ENV CATALINA_HOME=/usr/local/tomcat
+    ENV webapps=/usr/local/tomcat/webapps
+    ENV configs=/home/srs/conf
+    ENV API_BASE_PATH=/ginas/app
+
+    ARG DEFAULT_DEPLOY_IGNORE_PATTERN='adverse-events|applications|clinical-trials|discovery|impurities|invitro-pharmacology|products|ssg4m'
+
+    RUN rm -rf ${CATALINA_HOME}/temp && \
+        /bin/echo -e "#!/bin/sh\nmkdir -p /home/srs/conf /home/srs/logs /home/srs/exports\ncd /home/srs\nexec \"\$@\"\n" > /entrypoint.sh && \
+        chmod 755 /entrypoint.sh && \
+        sed -i "s/logs/\/home\/srs\/logs/g" ${CATALINA_HOME}/conf/server.xml && \
+        sed -i "s/8080/\$\{port.http.nossl:-8080\}/g" ${CATALINA_HOME}/conf/server.xml && \
+        sed -i "s/connectionTimeout/maxPostSize=\"536870912\" relaxedQueryChars=\"[]|{}\" connectionTimeout/g" ${CATALINA_HOME}/conf/server.xml && \
+        sed -i "s/unpackWARs=\"true\" autoDeploy=\"true\"/unpackWARs=\"false\" autoDeploy=\"false\" deployIgnore=\"\$\{deploy.ignore.pattern:-(${BUILD_DEFAULT_DEPLOY_IGNORE_PATTERN})\}\"/g" ${CATALINA_HOME}/conf/server.xml && \
+        sed -i "s/\$.catalina.base././g" ${CATALINA_HOME}/conf/logging.properties && \
+        mkdir -p /root/.cache/JNA /root/.java/fonts /home/srs/conf /home/srs/logs /home/srs/exports && \
+        ln -s /tmp /root/.cache/JNA/temp && \
+        ln -s /tmp /root/.java/fonts && \
+        ln -s /tmp ${CATALINA_HOME}/temp
+    
+    COPY --from=build --chown=root ${CATALINA_HOME} ${CATALINA_HOME}
+    WORKDIR /home/srs
+
+    ENTRYPOINT [ "/entrypoint.sh" ]
+    CMD ["catalina.sh", "run"]

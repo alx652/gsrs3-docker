@@ -56,7 +56,7 @@ END_HEREDOC
 
 cd $FRONTEND_DEV_DIR
 bash build.sh 
-after_build_f
+# after_build_f
 npm run $NPM_BUILD_STRING 
 copy_to_target_f
 perl -e 'my $text = $ENV{HEREDOC}; $text=~s/==//g; print $text;'

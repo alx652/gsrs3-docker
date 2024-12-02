@@ -11,45 +11,49 @@ FROM maven:3-jdk-11 as build
     ARG BASE_GIT_EP_URL=http://github.com/epuzanov
     ARG APPL_CONF_LOCATION="VOLUME"
 
-    ARG MODULE_IGNORE="adverse-events applications clinical-trials discovery impurities invitro-pharmacology ssg4m"
+    ARG MODULE_IGNORE="adverse-events applications clinical-trials discovery impurities invitro-pharmacology products ssg4m"
     
     # ARG FRONTEND_BUILD_ARGS='  -Dfrontend.tag=development_3.0 -Dwithout.visualizer -DskipTests '
-    ARG FRONTEND_BUILD_ARGS=' -Dfrontend.repo=file:///frontend-bin -Dfrontend.tag=local_deployable_binaries -Dnode.disable -Dwithout.visualizer -DskipTests '
-    # ARG FRONTEND_BUILD_ARGS='  -Dnode.disable -Dwithout.static -Dfrontend.tag=:development_3.0 -Dwithout.visualizer -DskipTests '
+    # ARG FRONTEND_BUILD_ARGS=' -Dfrontend.repo=file:///frontend-bin -Dfrontend.tag=local_deployable_binaries -Dnode.disable -Dwithout.visualizer -DskipTests '
+    ARG FRONTEND_BUILD_ARGS='  -Dnode.disable -Dwithout.static -Dfrontend.tag=development_3.0 -Dwithout.visualizer -DskipTests '
 
     COPY patches /src/patches
-    COPY frontend-bin /frontend-bin
+
+   COPY ${GSRS_CI_REPO_NAME} ${GSRS_CI_REPO_NAME}
+   # RUN git clone --recursive --depth=1 --branch ${GSRS_CI_TAG} ${BASE_GIT_URL}/${GSRS_CI_REPO_NAME}.git && \
+
+
+    # COPY frontend-bin /frontend-bin
     RUN [ -z "${EP_EXT_TAG}" ] && exit 0 ; \
       git clone --recursive --depth=1 --branch ${EP_EXT_TAG} ${BASE_GIT_EP_URL}/gsrs-ep-substance-extension.git && \
         cd gsrs-ep-substance-extension && \
         sh ./mvnw clean -U install -DskipTests && \
         cd ..
 
-   COPY ${GSRS_CI_REPO_NAME} ${GSRS_CI_REPO_NAME}
-   # RUN git clone --recursive --depth=1 --branch ${GSRS_CI_TAG} ${BASE_GIT_URL}/${GSRS_CI_REPO_NAME}.git && \
    RUN \
     cd ${GSRS_CI_REPO_NAME} && \
     [ -z "${EP_EXT_TAG}" ] && rm -rf /src/patches/30-gsrsEpExtension.patch ; \
     apt-get update && apt-get install -y --no-install-recommends patch && [ -d /src/patches ] && find /src/patches -type f -name '*.patch' -print0 -exec patch -p1 -i {} \; ; \
         mkdir -p ${CATALINA_HOME}/conf/Catalina/localhost ${CATALINA_HOME}/webapps && \
-        rm -rf ${MODULE_IGNORE} docs deployment-extras jenkins && \
+        rm -rf ${MODULE_IGNORE} docs deployment-extras && \
         for module in `ls -1` ; do \
-            echo "module"${module} && \
             [ ! -f ${module}/mvnw ] && continue ; \
             cd ${module} && \
-            rm -f src/main/resources/${module}-env.conf; && \
-            rm -f src/main/resources/${module}-env-db.conf; && \
-            if [ "${APPL_CONF_LOCATION} = "VOLUME" ]; then
+            echo "====> ${module}" && \
+            rm -f src/main/resources/${module}-env.conf && \
+            rm -f src/main/resources/${module}-env-db.conf && \
+            if [ ${APPL_CONF_LOCATION} = "VOLUME" ]; then \
               rm -f src/main/resources/application.*; \
-              /bin/echo -e "\ninclude \"${module}-env.conf\"\ninclude \"${module}-env-db.conf\"\ninclude \"\n${module}-application.conf\"\n" > src/main/resources/application.conf \
-            ; fi &&
+              /bin/echo -e "include \"${module}-env.conf\"\ninclude \"${module}-env-db.conf\"\ninclude \"${module}-application.conf\"\n" > src/main/resources/application.conf \
+            ; fi && \
+            [ -f installExtraJars.sh ] && sh ./installExtraJars.sh; \
             if [ $module = 'frontend' ]; then \
               sh ./mvnw clean -U package -DskipTests ${FRONTEND_BUILD_ARGS} \
             ; else  sh ./mvnw clean -U package -DskipTests \
             ; fi && \
             unzip ./target/${module}.war.original -d ${CATALINA_HOME}/webapps/${module} && \
             mkdir -p ${CATALINA_HOME}/work/Catalina/localhost/${module} && \
-            cd .. && \
+            cd .. && \ 
             rm -rf ${module} ; done && \
         [ -d ${CATALINA_HOME}/webapps/gateway ] && mv ${CATALINA_HOME}/webapps/gateway ${CATALINA_HOME}/webapps/ROOT ; \
         [ -d ${CATALINA_HOME}/work/Catalina/localhost/gateway ] && mv ${CATALINA_HOME}/work/Catalina/localhost/gateway ${CATALINA_HOME}/work/Catalina/localhost/ROOT ; \
@@ -64,12 +68,12 @@ FROM maven:3-jdk-11 as build
                 rm ${context}/WEB-INF/lib/${file} && \
                 ln -s ../../../substances/WEB-INF/lib/${file} ${context}/WEB-INF/lib/${file} ; done ; done
 
-FROM tomcat:9.0.95-jre11
+FROM tomcat:9-jre11
     ENV CATALINA_HOME=/usr/local/tomcat
     ENV webapps=/usr/local/tomcat/webapps
     ENV configs=/home/srs/conf
     ENV API_BASE_PATH=/ginas/app
-    ARG BUILD_DEFAULT_DEPLOY_IGNORE_PATTERN="adverse-events|applications|clinical-trials|discovery|impurities|invitro-pharmacology|ssg4m"
+    ARG BUILD_DEFAULT_DEPLOY_IGNORE_PATTERN="adverse-events|applications|clinical-trials|discovery|impurities|invitro-pharmacology|products|ssg4m"
 
     RUN rm -rf ${CATALINA_HOME}/temp && \
         /bin/echo -e "#!/bin/sh\nmkdir -p /home/srs/conf /home/srs/logs /home/srs/exports\ncd /home/srs\nexec \"\$@\"\n" > /entrypoint.sh && \
@@ -87,7 +91,8 @@ FROM tomcat:9.0.95-jre11
     COPY --from=build --chown=root ${CATALINA_HOME} ${CATALINA_HOME}
     WORKDIR /home/srs
 
-    RUN apt-get update && apt-get install -y nano 
+    RUN apt-get update && apt-get install -y nano vim
 
     ENTRYPOINT [ "/entrypoint.sh" ]
     CMD ["catalina.sh", "run"]
+
