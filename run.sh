@@ -3,7 +3,7 @@
 $_SUDO=''
 PROJECT="${PROJECT:-hocon}"
 IMAGE_NAME='gsrs3i-${PROJECT}:latest'
-DEFAULT_LOCAL_VOLUME=$(cd .. && pwd)/volumens/v1$PROJECT
+DEFAULT_LOCAL_VOLUME=$(cd .. && pwd)/volumes/v1$PROJECT
 LOCAL_VOLUME="${LOCAL_VOLUME:-$DEFAULT_LOCAL_VOLUME}"
 VOLUME=$LOCAL_VOLUME':/home/srs'
 DB_DDL_AUTO=${DB_DDL_UPDATE:-update}
