@@ -2,7 +2,7 @@ FROM maven:3-jdk-11 AS build
 
     ENV MAVEN_CONFIG=''
     ENV CATALINA_HOME=/usr/local/tomcat
-    ARG SKIP_PATCHES=YES
+    ARG SKIP_PATCHES=NO
     ARG INCLUDE_EXTRA_PACKAGES='vim'
 
     ARG BASE_GIT_URL=http://github.com/ncats
@@ -30,71 +30,57 @@ FROM maven:3-jdk-11 AS build
     #     gsrs-spring-module-ssg4:master \
     # "
 
-    ARG STARTER_MODULES=" \
-        gsrs-spring-starter:aw_a25_configlisttomap \
-        gsrs-spring-module-substances:aw_sm_a42_configlisttomap \
-    "
+    ARG STARTER_MODULES=""
+
 
     # Probably won't work do pass these on the command line. 
     # Will be used if frontend-bin folder exists:
     ARG FRONTEND_BUILD_ARGS_BIN=' -Dfrontend.repo=file:///frontend-bin -Dfrontend.tag=local_deployable_binaries -Dnode.disable -Dwithout.visualizer -DskipTests '
-    # Otherwise use this:
     ARG FRONTEND_BUILD_ARGS_STANDARD='  -Dfrontend.tag=development_3.0 -Dwithout.visualizer -DskipTests '
+
 
     #### --- Let the fun begin --- ####
 
     # Optional copy statements. Only recommended for debugging.
-    # if you prefer to clone, or not use at all, these folders SHOULD NOT exist 
-    # DO include the module repo names in STARTER_MODULES, even if you plan to use local copies.
-    # If you use local copies, the branch value specified in STARTER_MODULES will be ignored. 
-    # That is the active branch will be the branch set in the local repo folder.
-    # The bracke[t] trick prevents Docker from attempting to copy non-existing folders. 
-    COPY gsrs-spring-starte[r] gsrs-spring-starter
-    COPY gsrs-spring-module-substance[s] gsrs-spring-module-substances
-    COPY gsrs-spring-module-adverse-event[s] gsrs-spring-module-adverse-events
-    COPY gsrs-spring-module-drug-application[s] gsrs-spring-module-drug-applications
-    COPY gsrs-spring-module-clinical-trial[s] gsrs-spring-module-clinical-trials
-    COPY gsrs-spring-module-impuritie[s] gsrs-spring-module-impurities 
-    COPY gsrs-spring-module-invitro-pharmacolog[y] gsrs-spring-module-invitro-pharmacology
-    COPY gsrs-spring-module-drug-product[s] gsrs-spring-module-drug-products
-    COPY gsrs-spring-module-ssg[4] gsrs-spring-module-ssg4 
+    # Uncomment out those on which you wish to use copy
+    # COPY gsrs-spring-starter gsrs-spring-starter
+    # COPY gsrs-spring-module-substances gsrs-spring-module-substances
+    # COPY gsrs-spring-module-adverse-events gsrs-spring-module-adverse-events
+    # COPY gsrs-spring-module-drug-applications gsrs-spring-module-drug-applications
+    # COPY gsrs-spring-module-clinical-trials gsrs-spring-module-clinical-trials
+    # COPY gsrs-spring-module-impurities gsrs-spring-module-impurities 
+    # COPY gsrs-spring-module-invitro-pharmacology gsrs-spring-module-invitro-pharmacology
+    # COPY gsrs-spring-module-drug-products gsrs-spring-module-drug-products
+    # COPY gsrs-spring-module-ssg4 gsrs-spring-module-ssg4 
 
     RUN for repo in ${STARTER_MODULES}; do \
+	    echo ${repo} && \
             if ! [ -d ${repo%:*} ]; then \
                 git clone --recursive --depth=1 --branch ${repo#*:} ${BASE_GIT_URL}/${repo%:*}.git; \
             fi && \
             cd  ${repo%:*} && \
-            if [ -f installExtraJars.sh ]; then sh ./installExtraJars.sh; fi && \
-            sh ./mvnw clean -U install -DskipTests && \
+            if [ -f installExtraJars.sh ]; then /bin/sh ./installExtraJars.sh; fi && \
+            /bin/sh ./mvnw clean -U install -DskipTests && \
             cd ..; \
         done 
 
-    RUN cd gsrs-spring-module-substances && \
-        if [ -f installExtraJars.sh ]; then sh ./installExtraJars.sh; fi && \
-        sh ./mvnw clean -U install -DskipTests && cd .. 
-
-    COPY . /src
+    # Egor had . instead of src, can we be specific? 
+    COPY patches /src/patches
 
     # Install optional EP Extensions
     RUN [ -z "${EP_EXT_TAG}" ] && exit 0 ; \
         git clone --recursive --depth=1 --branch ${EP_EXT_TAG} EP_BASE_GIT_URL/${EP_EXT_REPO_NAME}.git && \
         cd gsrs-ep-substance-extension && \
-        sh ./mvnw clean -U install -DskipTests && \
+        /bin/sh ./mvnw clean -U install -DskipTests && \
         cd ..
 
-    # Optional copy statements. 
-    # If local copies are used, the branch deployed will be the active branch in the folder. 
-    # Only one can will be used.  It will only be used if equal to $GSRS_CI_REPO_NAME. 
-    # Useful to avoid authentication for private gsrs-ci repo and/or for debugging.
-    # To avoid using local copy, make sure these folder names DO NOT exist.
-    # The bracke[t] trick prevents Docker from attempting to copy non-existing folders. 
-    COPY gsrs-c[i] gsrs-ci 
-    COPY gsrs3-main-deploymen[t] gsrs3-main-deployment 
+    # Optional copy statements. Uncomment out those on which you wish to use copy
+    COPY gsrs-ci gsrs-ci 
+    # COPY gsrs3-main-deployment gsrs3-main-deployment 
 
-    # Optional copy; make sure folder does not exist if you prefer normal build of frontend.
-    # If this folder exists. Maven will package a local deployment binary rather than pulling from Git.  
-    # The bracke[t] trick prevents Docker from attempting to copy non-existing folders. 
-    COPY frontend-bi[n] frontend-bin
+    # Optional copy statements. Uncomment out those on which you wish to use copy
+    COPY frontend-bin frontend-bin
+
 
     RUN if [ -d ${GSRS_CI_REPO_NAME} ]; then \
             echo "====> GSRS_CI_REPO_NAME using local copy for ${GSRS_CI_REPO_NAME}"; \
@@ -105,7 +91,7 @@ FROM maven:3-jdk-11 AS build
         cd ${GSRS_CI_REPO_NAME} && \
         [ -z "${EP_EXT_TAG}" ] && rm -rf /src/patches/30-gsrsEpExtension.patch ; \
         apt-get update && apt-get install -y --no-install-recommends patch && \
-        if ! [ ${SKIP_PATCHES} = "YES"]; then \        
+        if ! [ ${SKIP_PATCHES} = "YES" ]; then \        
             if [ -d /src/patches ]; then find /src/patches -type f -name '*.patch' -print0 -exec patch -p1 -i {} \; ; fi \
         ; fi && \
         mkdir -p ${CATALINA_HOME}/conf/Catalina/localhost ${CATALINA_HOME}/webapps && \
@@ -114,17 +100,17 @@ FROM maven:3-jdk-11 AS build
             [ ! -f ${module}/mvnw ] && continue ; \
             echo "====> Begin ${module}" && \
             cd ${module} && \
-            if [ -f installExtraJars.sh ]; then sh ./installExtraJars.sh; fi && \
+            if [ -f installExtraJars.sh ]; then /bin/sh ./installExtraJars.sh; fi && \
             rm -f src/main/resources/${module}-env.conf && \
             rm -f src/main/resources/${module}-env-db.conf && \
             if [ $module = 'frontend' ]; then \
-                if [ -d ../../frontend-bin]; then \
-                    sh ./mvnw clean -U package -DskipTests ${FRONTEND_BUILD_ARGS_BIN}; \
+                if [ -d /frontend-bin ]; then \
+                    /bin/sh ./mvnw clean -U package -DskipTests ${FRONTEND_BUILD_ARGS_BIN}; \
                 else \
-                    sh ./mvnw clean -U package -DskipTests ${FRONTEND_BUILD_ARGS_STANDARD}; \
+                    /bin/sh ./mvnw clean -U package -DskipTests ${FRONTEND_BUILD_ARGS_STANDARD}; \
                 fi; \
             else \
-                sh ./mvnw clean -U package -DskipTests; \
+                /bin/sh ./mvnw clean -U package -DskipTests; \
             fi && \
             unzip ./target/${module}.war.original -d ${CATALINA_HOME}/webapps/${module} && \
             mkdir -p ${CATALINA_HOME}/work/Catalina/localhost/${module} && \
@@ -132,12 +118,13 @@ FROM maven:3-jdk-11 AS build
             echo "====> End ${module}" && \
             rm -rf ${module}; \
         done && \
-        [ -d ${CATALINA_HOME}/webapps/gateway ] && mv ${CATALINA_HOME}/webapps/gateway ${CATALINA_HOME}/webapps/ROOT ; \
-        [ -d ${CATALINA_HOME}/work/Catalina/localhost/gateway ] && mv ${CATALINA_HOME}/work/Catalina/localhost/gateway ${CATALINA_HOME}/work/Catalina/localhost/ROOT ; \
-        cd .. && \
+        if [ -d ${CATALINA_HOME}/webapps/gateway ]; then mv ${CATALINA_HOME}/webapps/gateway ${CATALINA_HOME}/webapps/ROOT ; fi && \
+        if [ -d ${CATALINA_HOME}/work/Catalina/localhost/gateway ]; then  mv ${CATALINA_HOME}/work/Catalina/localhost/gateway ${CATALINA_HOME}/work/Catalina/localhost/ROOT ; fi && \
         if [ -n  "${INCLUDE_EXTRA_PACKAGES}" ]; then \
             apt-get update && apt-get install -y ${INCLUDE_EXTRA_PACKAGES}; \
-        fi
+        fi && \
+	echo "Services loop section finished, will do ls of webapps:" && \
+	ls -1 ${CATALINA_HOME}/webapps
 
     # Remove duplicated JAR files
     RUN [ ! -d ${CATALINA_HOME}/webapps/substances ] && exit 0 ; \
@@ -149,6 +136,18 @@ FROM maven:3-jdk-11 AS build
                 ln -s ../../../substances/WEB-INF/lib/${file} ${context}/WEB-INF/lib/${file}; \
             done; \
         done
+
+    # Remove any copied or cloned starter modules 
+    RUN rm -rf \
+        gsrs-spring-starter gsrs-spring-starter \
+        gsrs-spring-module-substances gsrs-spring-module-substances \
+        gsrs-spring-module-adverse-events gsrs-spring-module-adverse-events \
+        gsrs-spring-module-drug-applications gsrs-spring-module-drug-applications \
+        gsrs-spring-module-clinical-trials gsrs-spring-module-clinical-trials \
+        gsrs-spring-module-impurities gsrs-spring-module-impurities \
+        gsrs-spring-module-invitro-pharmacology gsrs-spring-module-invitro-pharmacology \
+        gsrs-spring-module-drug-products gsrs-spring-module-drug-products \
+        gsrs-spring-module-ssg4 gsrs-spring-module-ssg4
 
 FROM tomcat:9-jre11
     ENV CATALINA_HOME=/usr/local/tomcat
