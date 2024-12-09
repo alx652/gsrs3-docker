@@ -2,8 +2,7 @@ FROM maven:3-jdk-11 AS build
 
     ENV MAVEN_CONFIG=''
     ENV CATALINA_HOME=/usr/local/tomcat
-    ARG SKIP_PATCHES=NO
-    ARG INCLUDE_EXTRA_PACKAGES='vim'
+    ARG SKIP_PATCHES=YES
 
     ARG BASE_GIT_URL=http://github.com/ncats
     ARG GSRS_CI_REPO_NAME=gsrs-ci
@@ -120,9 +119,6 @@ FROM maven:3-jdk-11 AS build
         done && \
         if [ -d ${CATALINA_HOME}/webapps/gateway ]; then mv ${CATALINA_HOME}/webapps/gateway ${CATALINA_HOME}/webapps/ROOT ; fi && \
         if [ -d ${CATALINA_HOME}/work/Catalina/localhost/gateway ]; then  mv ${CATALINA_HOME}/work/Catalina/localhost/gateway ${CATALINA_HOME}/work/Catalina/localhost/ROOT ; fi && \
-        if [ -n  "${INCLUDE_EXTRA_PACKAGES}" ]; then \
-            apt-get update && apt-get install -y ${INCLUDE_EXTRA_PACKAGES}; \
-        fi && \
 	echo "Services loop section finished, will do ls of webapps:" && \
 	ls -1 ${CATALINA_HOME}/webapps
 
@@ -131,7 +127,7 @@ FROM maven:3-jdk-11 AS build
         cd ${CATALINA_HOME}/webapps && \
         for context in $(ls -1 | grep -v substances) ; do \
             for file in $(ls -1 ${context}/WEB-INF/lib) ; do \
-                [ ! -f substances/WEB-INF/lib/${file} ] && continue ; \
+               [ ! -f substances/WEB-INF/lib/${file} ] && continue ; \
                 rm ${context}/WEB-INF/lib/${file} && \
                 ln -s ../../../substances/WEB-INF/lib/${file} ${context}/WEB-INF/lib/${file}; \
             done; \
@@ -155,6 +151,7 @@ FROM tomcat:9-jre11
     ENV configs=/home/srs/conf
     ENV API_BASE_PATH=/ginas/app
 
+    ARG INCLUDE_EXTRA_PACKAGES='vim'
     ARG DEFAULT_DEPLOY_IGNORE_PATTERN='adverse-events|applications|clinical-trials|discovery|impurities|invitro-pharmacology|products|ssg4m'
 
     RUN rm -rf ${CATALINA_HOME}/temp && \
@@ -168,8 +165,11 @@ FROM tomcat:9-jre11
         mkdir -p /root/.cache/JNA /root/.java/fonts /home/srs/conf /home/srs/logs /home/srs/exports && \
         ln -s /tmp /root/.cache/JNA/temp && \
         ln -s /tmp /root/.java/fonts && \
-        ln -s /tmp ${CATALINA_HOME}/temp
-    
+        ln -s /tmp ${CATALINA_HOME}/temp && \
+        if [ -n  "${INCLUDE_EXTRA_PACKAGES}" ]; then \
+            apt-get update && apt-get install -y ${INCLUDE_EXTRA_PACKAGES}; \
+        fi
+
     COPY --from=build --chown=root ${CATALINA_HOME} ${CATALINA_HOME}
     WORKDIR /home/srs
 

@@ -4,6 +4,7 @@
 # export _MODULE_IGNORE_SUBSTANCES_PLUS='adverse-events applications clinical-trials discovery impurities invitro-pharmacology products ssg4m'
 # export _MODULE_IGNORE_FRONTEND_ONLY='adverse-events applications clinical-trials discovery gateway impurities invitro-pharmacology products ssg4m substances'
 # export _MODULE_IGNORE_GATEWAY_ONLY="adverse-events applications clinical-trials discovery frontend impurities invitro-pharmacology products ssg4m substances"
+
 # export _STARTER_MOUDULES_SUBSTANCES_ONLY="gsrs-spring-starter:master gsrs-spring-module-substances:master"
 # export _STARTER_MOUDULES_SUBSTANCES_PLUS="gsrs-spring-starter:master gsrs-spring-module-substances:master"
 # Remove any multispace sequences and then trim
