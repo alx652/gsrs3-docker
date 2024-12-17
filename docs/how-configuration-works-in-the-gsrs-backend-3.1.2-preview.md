@@ -1,6 +1,6 @@
 # How configuration works in the GSRS Backend (3.1.2 preview)
 
-'---- DRAFT/PREVIEW ----- 
+'---- DRAFT/PREVIEW ---- Subject to change ----
 
 Last Edited: 2024-05-05
 
