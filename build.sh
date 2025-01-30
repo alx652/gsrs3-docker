@@ -22,14 +22,25 @@ STARTER_MODULES=" \
    gsrs-spring-module-impurities:mm_a01_configlisttomap \
    gsrs-spring-module-invitro-pharmacology:mm_3.1.2 \
    gsrs-spring-module-drug-products:aw_a02_configlisttomap \
+   gsrs-spring-module-ssg4:mm_3.1.2 \
 "
-#   gsrs-spring-module-ssg4:mm_3.1.2 \
-
+    # Format "repo-name:reference" where reference may be tag, branch, etc.
+STARTER_MODULES=" \
+    gsrs-spring-starter:master \
+    gsrs-spring-module-substances:master \
+    gsrs-spring-module-adverse-events:starter \
+    gsrs-spring-module-drug-applications:starter \
+    gsrs-spring-module-clinical-trials:master \
+    gsrs-spring-module-impurities:starter \
+    gsrs-spring-module-invitro-pharmacology:master \
+    gsrs-spring-module-drug-products:starter \
+    gsrs-spring-module-ssg4:master \
+"
 STARTER_MODULES=$(awk '{$1=$1};1' <<<"$STARTER_MODULES")
 
-MODULE_IGNORE="discovery ssg4m"
+MODULE_IGNORE="discovery"
 
-DEFAULT_DEPLOY_IGNORE_PATTERN="discovery|ssg4m"
+DEFAULT_DEPLOY_IGNORE_PATTERN="discovery"
 
 USE_SUDO=${USE_SUDO:-''}
 PROJECT=${PROJECT:-hocon}
@@ -45,4 +56,3 @@ $USE_SUDO docker build \
    --build-arg DEFAULT_DEPLOY_IGNORE_PATTERN="${DEFAULT_DEPLOY_IGNORE_PATTERN}" \
    --ulimit nofile=65535:65535 $CACHE $PROGRESS \
    -t ${IMAGE_NAME} .
-
